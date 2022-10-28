@@ -2,3 +2,8 @@
 __pycache__/
 log.pkl
 runs/
+*.pyc
+cifar-100-python/
+*.tar.gz
+*.pt
+*.pth

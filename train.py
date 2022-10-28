@@ -34,25 +34,31 @@ from timeit import default_timer as timer
 @click.command()
 @click.option('--train_dir', default=None, help='Data path for training')
 @click.option('--validation_dir', default=None, help='Data path for valication')
-@click.option('--image_data_type', default="image_folder", type=click.Choice(["lsun", "image_folder"]), help='If you are using lsun images from lsun lmdb, use lsun. If you use your own data in a folder, then use "image_folder". If you use lmdb, you\'ll need to write the loader by yourself. Please check load_data function')
+@click.option('--image_data_type', default="image_folder", type=click.Choice(["cifar100", "lsun", "image_folder"]), help='If you are using lsun images from lsun lmdb, use lsun. If you use your own data in a folder, then use "image_folder". If you use lmdb, you\'ll need to write the loader by yourself. Please check load_data function')
 @click.option('--output_path', default=None, help='Output path where result (.e.g drawing images, cost, chart) will be stored')
 @click.option('--dim', default=64, help='Model dimensionality or image resolution, tested with 64.')
 @click.option('--lr', default=1e-4, help='Learning rate')
 @click.option('--critic_iters', default=5, help='How many iterations to train the critic/disciminator for')
 @click.option('--gen_iters', default=1, help='How many iterations to train the gemerator for')
-@click.option('--batch_size', default=64, help='Training batch size. Must be a multiple of number of gpus')
+@click.option('--batch_size', default=16, help='Training batch size. Must be a multiple of number of gpus')
 @click.option('--noisy_label_prob', default=0., help='Make the labels the noisy for the discriminator: occasionally flip the labels when training the discriminator')
 @click.option('--start_iter', default=0, help='Starting iteration')
-@click.option('--end_iter', default=100000, help='Ending iteration')
+@click.option('--end_iter', default=12, help='Ending iteration')
 @click.option('--gp_lambda', default=10, help='Gradient penalty lambda hyperparameter')
 @click.option('--num_workers', default=5, help='Number of workers to load data')
-@click.option('--saving_step', default=200, help='Save model, sample every this saving step')
+@click.option('--saving_step', default=10, help='Save model, sample every this saving step')
 @click.option('--training_class', default=None, help='A list of classes, separated by comma ",". IGNORE this if you are NOT training on lsun, or if you want to train on other classes of lsun, then change it accordingly')
 @click.option('--val_class', default=None, help='A list of classes, separated by comma ",". IGNORE this if you are NOT training on lsun, or if you want to train on other classes of lsun, then change it accordingly')
 @click.option('--restore_mode/--no-restore_mode', default=False, help="If True, it will load saved model from OUT_PATH and continue to train")
+@click.option('--seed', default=0, help='Random seed')
 
 
-def train(train_dir, validation_dir, image_data_type, output_path, dim, lr, critic_iters, gen_iters, batch_size, noisy_label_prob, start_iter, end_iter, gp_lambda, num_workers, saving_step, training_class, val_class, restore_mode):
+def train(train_dir, validation_dir, image_data_type, output_path, dim, lr, 
+    critic_iters, gen_iters, batch_size, noisy_label_prob, start_iter, end_iter, gp_lambda,
+    num_workers, saving_step, training_class, val_class, restore_mode, seed):
+
+    torch.random.manual_seed(seed)
+    np.random.seed(seed)
 
     if train_dir is None or len(train_dir) == 0:
         raise Exception('Please specify path to data directory in gan.py!')
@@ -67,14 +73,11 @@ def train(train_dir, validation_dir, image_data_type, output_path, dim, lr, crit
         val_class = val_class.split(",")
 
     data_transform = transforms.Compose([
-        transforms.Resize(dim),
-        transforms.RandomCrop(dim),
-        # transforms.Lambda(lambda x : x + torch.normal(0, 0.1, (3, dim, dim))),
-        transforms.ToTensor(),
-        # transforms.Lambda(lambda x : x + torch.randn_like(x)),
-        # transforms.Lambda(lambda x : x + torch.normal(0, 0.1, (3, dim, dim))),
-        transforms.Normalize(mean=[0.5, 0.5, 0.5],std=[0.5, 0.5, 0.5])
-    ])
+            transforms.ToTensor(),
+            transforms.Resize(dim),
+            transforms.Normalize(mean=[0.4914, 0.4822, 0.4465], std=[
+                0.247, 0.243, 0.261]),
+        ])
 
     cuda_available = torch.cuda.is_available()
     device = torch.device("cuda" if cuda_available else "cpu")
@@ -154,7 +157,8 @@ def train(train_dir, validation_dir, image_data_type, output_path, dim, lr, crit
             # fake_data += torch.normal(0, 0.1, (batch_size, 3, dim, dim)).to(device)
             end = timer(); print(f'---gen G elapsed time: {end-start}')
             start = timer()
-            batch = next(dataiter, None)
+
+            batch = next(dataiter)
             if batch is None:
                 dataiter = iter(dataloader)
                 batch = dataiter.next()
@@ -214,10 +218,9 @@ def train(train_dir, validation_dir, image_data_type, output_path, dim, lr, crit
             dev_disc_costs = []
             for _, images in enumerate(val_loader):
                 imgs = torch.Tensor(images[0])
-               	imgs = imgs.to(device)
+                imgs = imgs.to(device)
                 with torch.no_grad():
             	    imgs_v = imgs
-
                 D = aD(imgs_v)
                 _dev_disc_cost = -D.mean().cpu().data.numpy()
                 dev_disc_costs.append(_dev_disc_cost)
@@ -235,5 +238,6 @@ def train(train_dir, validation_dir, image_data_type, output_path, dim, lr, crit
         lib.plot.tick()
 
 if __name__ == '__main__':
+
     train()
     
